@@ -1,0 +1,129 @@
+# Workout Tracker API
+
+A Flask + SQLAlchemy + Marshmallow backend for a workout tracking app used by personal trainers. Trainers can create workouts and reusable exercises, and attach exercises to workouts with reps, sets, or a duration.
+
+## Features
+
+- Create, view and delete **workouts** and **exercises**
+- Reusable exercises: the same exercise can be added to many workouts through the `WorkoutExercise` join table
+- Validation at three levels: database table constraints, model validations and Marshmallow schema validations
+- Seed script with realistic starter data
+
+## Project Structure
+
+```
+.
+├── Pipfile
+├── Pipfile.lock
+├── README.md
+└── server
+    ├── app.py        # Flask app, error handlers and routes
+    ├── models.py     # SQLAlchemy models, relationships, constraints, validations
+    ├── schemas.py    # Marshmallow schemas (serialization + request validation)
+    ├── seed.py       # Seed data
+    └── migrations/   # Alembic migrations
+```
+
+## Installation
+
+Requires Python 3.8+ and [Pipenv](https://pipenv.pypa.io/).
+
+```bash
+git clone <your-repo-url>
+cd flask-workout-app-backend-main
+pipenv install
+pipenv shell
+cd server
+```
+
+## Database Setup
+
+Run these from the `server` directory:
+
+```bash
+export FLASK_APP=app.py
+flask db init          # only if the migrations folder does not exist yet
+flask db migrate -m "create tables"
+flask db upgrade
+python seed.py
+```
+
+## Run the App
+
+```bash
+python app.py
+```
+
+The API is served at `http://127.0.0.1:5555`.
+
+## Data Model
+
+| Model | Fields |
+| --- | --- |
+| `Exercise` | `id`, `name`, `category`, `equipment_needed` |
+| `Workout` | `id`, `date`, `duration_minutes`, `notes` |
+| `WorkoutExercise` | `id`, `workout_id`, `exercise_id`, `reps`, `sets`, `duration_seconds` |
+
+Relationships: a `Workout` has many `WorkoutExercises`; an `Exercise` has many `WorkoutExercises`; a `Workout` has many `Exercises` through `WorkoutExercises` (and vice versa). Deleting a workout or exercise also deletes its `WorkoutExercises`.
+
+## Validations
+
+**Table constraints**
+- `exercises.name` is unique and cannot be blank; `category` cannot be blank
+- `workouts.duration_minutes` must be greater than 0
+- `reps`, `sets` and `duration_seconds` cannot be negative
+
+**Model validations** (`@validates`)
+- Exercise `name`/`category` must be non-empty strings; `equipment_needed` must be a boolean
+- Workout `date` must be a date, `duration_minutes` a positive integer, `notes` at most 500 characters
+- `reps`, `sets`, `duration_seconds` must be non-negative integers
+
+**Schema validations** (Marshmallow)
+- Required fields and types, length limits, range limits (e.g. duration 1-1440 minutes)
+- Blank/whitespace-only names are rejected
+- Unknown fields are rejected
+- A workout exercise needs `reps` and `sets` together, or a `duration_seconds` (or all three)
+
+## API Endpoints
+
+| Method | Route | Description | Success |
+| --- | --- | --- | --- |
+| GET | `/workouts` | List all workouts | 200 |
+| GET | `/workouts/<id>` | One workout with its exercises (reps/sets/duration) | 200 |
+| POST | `/workouts` | Create a workout | 201 |
+| DELETE | `/workouts/<id>` | Delete a workout and its workout exercises | 204 |
+| GET | `/exercises` | List all exercises | 200 |
+| GET | `/exercises/<id>` | One exercise with its associated workouts | 200 |
+| POST | `/exercises` | Create an exercise | 201 |
+| DELETE | `/exercises/<id>` | Delete an exercise and its workout exercises | 204 |
+| POST | `/workouts/<workout_id>/exercises/<exercise_id>/workout_exercises` | Add an exercise to a workout | 201 |
+
+Errors return JSON: `400` for validation errors, `404` when a record is not found, `409` for database constraint violations (e.g. duplicate exercise name).
+
+### Example requests
+
+```bash
+# Create a workout
+curl -X POST http://127.0.0.1:5555/workouts \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2025-02-01", "duration_minutes": 40, "notes": "Leg day"}'
+
+# Create an exercise
+curl -X POST http://127.0.0.1:5555/exercises \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Lunges", "category": "Strength", "equipment_needed": false}'
+
+# Add exercise 1 to workout 1 (3 sets of 10 reps)
+curl -X POST http://127.0.0.1:5555/workouts/1/exercises/1/workout_exercises \
+  -H "Content-Type: application/json" \
+  -d '{"reps": 10, "sets": 3}'
+
+# Add a timed exercise
+curl -X POST http://127.0.0.1:5555/workouts/1/exercises/7/workout_exercises \
+  -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 60}'
+```
+
+## Tech Stack
+
+Flask 2.2.2, Flask-SQLAlchemy 3.0.3, Flask-Migrate 3.1.0, Marshmallow 3.20.1, SQLite.
